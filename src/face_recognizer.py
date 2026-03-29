@@ -9,10 +9,11 @@ from mediapipe.tasks.python import vision
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
+from src.face_encoder import extract_features
 
 class FaceRecognizer:
     def __init__(self):
-        """Initialize the FaceRecognizer, MediaPipe Face Detection, and load encodings."""
+        """Initialize the FaceRecognizer, MediaPipe Face Detection, and load robust HOG encodings."""
         self.known_face_encodings = []
         self.known_face_names = []
         
@@ -24,7 +25,7 @@ class FaceRecognizer:
         self._load_encodings()
         
     def _load_encodings(self):
-        """Load known face encodings from the pickle file."""
+        """Load known robust HOG face encodings from the pickle file."""
         if not os.path.exists(config.ENCODINGS_FILE):
             print(f"[WARNING] Encodings file not found: {config.ENCODINGS_FILE}")
             return
@@ -34,13 +35,13 @@ class FaceRecognizer:
                 data = pickle.load(f)
                 self.known_face_encodings = [np.array(e) for e in data["encodings"]]
                 self.known_face_names = data["names"]
-            print(f"[INFO] Loaded {len(self.known_face_encodings)} encodings.")
+            print(f"[INFO] Loaded {len(self.known_face_encodings)} robust HOG encodings.")
         except Exception as e:
             print(f"[ERROR] Could not load encodings: {e}")
             
     def recognize_faces(self, frame):
         """
-        Detect and recognize faces in the given frame using MediaPipe Tasks API.
+        Detect and recognize faces in the given frame using robust HOG features.
         Returns a list of tuples: (name, (top, right, bottom, left))
         """
         if not self.known_face_encodings:
@@ -67,7 +68,6 @@ class FaceRecognizer:
                 bbox = detection.bounding_box
                 
                 # Scale relative to small_frame back up to original frame
-                # Actually bbox from detector is in pixels of the input image (small_frame)
                 inv_factor = 1.0 / config.FRAME_RESIZE_FACTOR
                 top = int(bbox.origin_y * inv_factor)
                 left = int(bbox.origin_x * inv_factor)
@@ -76,7 +76,7 @@ class FaceRecognizer:
                 bottom = top + height
                 right = left + width
                 
-                # Crop and generate encoding
+                # Crop and extract robust features
                 y1, y2 = max(0, top), min(h, bottom)
                 x1, x2 = max(0, left), min(w, right)
                 
@@ -85,20 +85,20 @@ class FaceRecognizer:
                 if face_roi.size == 0:
                     continue
                     
-                # Resize and flatten
-                face_resized = cv2.resize(face_roi, config.FACE_SIZE)
-                face_gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
-                current_encoding = face_gray.flatten()
+                # Extract robust HOG features (includes resize, grayscale, and hist-equ)
+                current_encoding = extract_features(face_roi)
                 
-                # Comparison using Euclidean distance
+                # Comparison using Euclidean distance (on L2-normalized HOG vectors)
                 name = "Unknown"
                 if len(self.known_face_encodings) > 0:
+                    # Distances to all known encodings
                     distances = [np.linalg.norm(current_encoding - known) for known in self.known_face_encodings]
                     best_match_index = np.argmin(distances)
+                    best_distance = distances[best_match_index]
                     
-                    norm_dist = distances[best_match_index] / len(current_encoding)
-                    if norm_dist < config.MATCH_THRESHOLD * 255:
-                         name = self.known_face_names[best_match_index]
+                    # Basic Threshold Check
+                    if best_distance < config.MATCH_THRESHOLD:
+                        name = self.known_face_names[best_match_index]
                 
                 recognized_faces.append((name, (top, right, bottom, left)))
                 

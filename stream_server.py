@@ -11,6 +11,7 @@ import config
 from src.face_recognizer import FaceRecognizer
 from src.attendance import AttendanceManager
 from src.utils import ensure_directories
+from collections import deque, Counter
 
 app = Flask(__name__)
 
@@ -18,6 +19,24 @@ app = Flask(__name__)
 ensure_directories()
 recognizer = FaceRecognizer()
 attendance_manager = AttendanceManager()
+
+# For Temporal Smoothing: name_history for EACH person detected
+# In a real multi-person system, you'd track face IDs, 
+# but for simple 1-2 person logic, we'll keep a window of recent names.
+identity_history = deque(maxlen=config.TEMPORAL_WINDOW)
+
+def get_smoothed_name(detected_name):
+    """Adds a detection to history and returns the most frequent stable name."""
+    identity_history.append(detected_name)
+    
+    # Count occurrences
+    counts = Counter(identity_history)
+    most_common, count = counts.most_common(1)[0]
+    
+    # Stability threshold: Must be seen in majority of frames
+    if count >= (config.TEMPORAL_WINDOW // 2 + 1):
+        return most_common
+    return "Searching..."
 
 def generate_frames():
     video_capture = cv2.VideoCapture(0)
@@ -34,24 +53,39 @@ def generate_frames():
         if not success:
             break
         
-        # Recognition logic (same as main.py)
+        # Recognition logic (every Nth frame)
         if frame_count % config.FRAME_SKIP == 0:
-            recognized_faces = recognizer.recognize_faces(frame)
+            raw_faces = recognizer.recognize_faces(frame)
             
-            # Log attendance
-            for name, _ in recognized_faces:
-                if name != "Unknown":
-                    attendance_manager.mark_attendance(name)
+            # Apply Temporal Smoothing to the main face
+            recognized_faces = []
+            for name, bbox in raw_faces:
+                stable_name = get_smoothed_name(name)
+                recognized_faces.append((stable_name, bbox))
+                
+                # Log attendance only if the name is STABLE and not Unknown/Searching
+                if stable_name not in ["Unknown", "Searching..."]:
+                    attendance_manager.mark_attendance(stable_name)
         
         frame_count += 1
 
         # Draw boxes on the frame for the stream
         for name, (top, right, bottom, left) in recognized_faces:
-            color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
+            # Color: Green for stable match, Yellow for searching, Red for unknown
+            if name == "Searching...":
+                color = (0, 255, 255) # Yellow
+                text_color = (0, 0, 0)
+            elif name == "Unknown":
+                color = (0, 0, 255) # Red
+                text_color = (255, 255, 255)
+            else:
+                color = (0, 255, 0) # Green
+                text_color = (0, 0, 0)
+            
             cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
             cv2.rectangle(frame, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
-            cv2.putText(frame, name, (left + 6, bottom - 6), font, 0.6, (255, 255, 255), 1)
+            cv2.putText(frame, name, (left + 6, bottom - 6), font, 0.6, text_color, 1)
 
         # Encode frame as JPEG
         ret, buffer = cv2.imencode('.jpg', frame)

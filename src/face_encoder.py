@@ -11,8 +11,38 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from src.utils import ensure_directories
 
+def get_hog_descriptor():
+    """Returns a HOG descriptor configured for our face size."""
+    # winSize, blockSize, blockStride, cellSize, nbins
+    return cv2.HOGDescriptor(config.FACE_SIZE, (16, 16), (8, 8), (8, 8), 9)
+
+def extract_features(face_roi):
+    """Extracts normalized HOG features from a face ROI."""
+    # Preprocessing: Resize and Grayscale
+    face_resized = cv2.resize(face_roi, config.FACE_SIZE)
+    face_gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
+    
+    # Noise Reduction (Bilateral Filter)
+    # This preserves edges (essential for HOG) while smoothing sensor noise
+    face_denoised = cv2.bilateralFilter(face_gray, d=5, sigmaColor=75, sigmaSpace=75)
+    
+    # Lighting Normalization: Histogram Equalization
+    face_equ = cv2.equalizeHist(face_denoised)
+    
+    # Feature Extraction: HOG
+    hog = get_hog_descriptor()
+    features = hog.compute(face_equ)
+    
+    # Ensure it's a 1D array and L2 normalized
+    features = features.flatten()
+    norm = np.linalg.norm(features)
+    if norm > 0:
+        features = features / norm
+        
+    return features
+
 def encode_faces():
-    """Reads student images from the data directory and generates lightweight face encodings."""
+    """Reads student images and generates robust HOG-based face encodings."""
     ensure_directories()
     
     # Initialize MediaPipe Face Detector
@@ -29,7 +59,7 @@ def encode_faces():
         print(f"[ERROR] Directory not found: {students_dir}")
         return
         
-    print("[INFO] Indexing student images...")
+    print("[INFO] Indexing student images using HOG features...")
     
     # Iterate over each student folder
     for student_name in os.listdir(students_dir):
@@ -80,28 +110,26 @@ def encode_faces():
                         if face_roi.size == 0:
                             continue
                             
-                        # Generate lightweight encoding
-                        face_resized = cv2.resize(face_roi, config.FACE_SIZE)
-                        face_gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY)
-                        encoding = face_gray.flatten()
+                        # Extract HOG features
+                        encoding = extract_features(face_roi)
                         
                         known_encodings.append(encoding)
                         known_names.append(student_name)
                         
-                        # Usually one face per calibration image
+                        # Use all faces found in a calibration image (or just the first one)
                         break
                         
             except Exception as e:
                 print(f"[ERROR] Failed to process {image_path}: {str(e)}")
     
     # Save the encodings
-    print("[INFO] Saving encodings...")
+    print("[INFO] Saving robust encodings...")
     data = {"encodings": known_encodings, "names": known_names}
     
     with open(config.ENCODINGS_FILE, "wb") as f:
         pickle.dump(data, f)
         
-    print(f"[SUCCESS] Saved {len(known_encodings)} encodings to {config.ENCODINGS_FILE}")
+    print(f"[SUCCESS] Saved {len(known_encodings)} robust encodings to {config.ENCODINGS_FILE}")
 
 if __name__ == "__main__":
     encode_faces()

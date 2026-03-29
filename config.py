@@ -13,13 +13,14 @@ ATTENDANCE_LOG_FILE = os.path.join(LOGS_DIR, "attendance.csv")
 MEDIAPIPE_MODEL_PATH = os.path.join(DATA_DIR, "face_detector.tflite")
 
 # Face Recognition Settings
-TOLERANCE = 0.5  # For legacy face_recognition
-MATCH_THRESHOLD = 0.6  # For Euclidean distance (lower is better)
-FRAME_RESIZE_FACTOR = 0.5  # Resize frame for faster face detection
-PROCESS_ALTERNATE_FRAMES = True  # Process every Nth frame
-FRAME_SKIP = 2  # Skip every N frames
-FACE_SIZE = (100, 100)  # Size to resize cropped face for encoding
-MAX_FACES_PER_FRAME = 2  # Limit number of faces processed
+TOLERANCE = 0.5 
+MATCH_THRESHOLD = 0.75  # Balanced threshold for HOG features
+FRAME_RESIZE_FACTOR = 0.5 
+PROCESS_ALTERNATE_FRAMES = True 
+FRAME_SKIP = 2 
+FACE_SIZE = (96, 96) 
+MAX_FACES_PER_FRAME = 2 
+TEMPORAL_WINDOW = 7  # Increased for smoother identification (needs 4 stable frames)
 
 # Networking Settings
 STREAM_HOST = "0.0.0.0"

@@ -54,10 +54,13 @@ def main():
             # Draw a box around the face
             cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
             
+            # Text color: black for green box, white for red box
+            text_color = (0, 0, 0) if name != "Unknown" else (255, 255, 255)
+            
             # Draw a label with a name below the face
             cv2.rectangle(frame, (left, bottom - 35), (right, bottom), color, cv2.FILLED)
             font = cv2.FONT_HERSHEY_DUPLEX
-            cv2.putText(frame, name, (left + 6, bottom - 6), font, 0.6, (255, 255, 255), 1)
+            cv2.putText(frame, name, (left + 6, bottom - 6), font, 0.6, text_color, 1)
             
         # Display the resulting image
         # cv2.imshow('AI Attendance System', frame)
