@@ -1,0 +1,13 @@
+# Python cache
+__pycache__/
+
+# Mac OS junk
+.DS_Store
+
+# Project specific files
+logs/attendance.csv
+data/encodings.pkl
+
+# Ignore student face images but keep the folder tracked
+data/students/*
+!data/students/.gitkeep
